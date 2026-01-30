@@ -69,6 +69,14 @@ psql -U postgres
 ```sql
 CREATE DATABASE url_shortener;
 \c url_shortener
+CREATE TABLE url_mapping (
+    id BIGSERIAL PRIMARY KEY,
+    short_code VARCHAR(20) UNIQUE,
+    long_url TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    click_count INT DEFAULT 0
+);
+
 ```
 
 ---

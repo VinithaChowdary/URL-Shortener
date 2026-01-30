@@ -10,7 +10,7 @@ public class Main {
         UrlService service = new UrlService();
 
         // 🔹 Create new short URLs (adds rows to DB)
-        String s1 = service.createShortUrl("https://google.com");
+        String s1 = service.createShortUrl("http://localhost:8080/doesnotexist");
         String s2 = service.createShortUrl("https://openai.com");
 
         System.out.println("Created: " + s1);
@@ -19,3 +19,4 @@ public class Main {
         RedirectController.startServer();
     }
 }
+

@@ -1,5 +1,7 @@
 package com.example.URLShortener.service;
 
+import java.net.URI;
+
 import com.example.URLShortener.repository.UrlRepository;
 import com.example.URLShortener.util.Base62Encoder;
 import com.example.URLShortener.util.RedisUtil;
@@ -12,6 +14,8 @@ public class UrlService {
 
     
     public String createShortUrl(String longUrl) throws Exception {
+
+        ensureValidUrl(longUrl);
 
         // 1️⃣ Save URL → get auto-generated ID
         long id = repository.saveAndReturnId(longUrl);
@@ -38,9 +42,12 @@ public class UrlService {
 
             if (cachedUrl != null) {
                 // Cache HIT
+                System.out.println("[Redis][CacheHit] shortCode=" + shortCode + " -> " + cachedUrl);
                 repository.incrementClickCount(shortCode);
                 return cachedUrl;
             }
+
+            System.out.println("[Redis][CacheMiss] shortCode=" + shortCode);
         }
 
         // 2️⃣ Cache MISS → DB lookup
@@ -54,10 +61,33 @@ public class UrlService {
         // 3️⃣ Populate cache
         try (Jedis jedis = RedisUtil.getClient()) {
             jedis.set(shortCode, longUrl);
+            System.out.println("[Redis][CacheWrite] shortCode=" + shortCode + " -> " + longUrl);
         }
 
         // 4️⃣ Track click
         repository.incrementClickCount(shortCode);
         return longUrl;
     }
+
+    private void ensureValidUrl(String url) {
+        try {
+            URI uri = new URI(url);
+
+            String scheme = uri.getScheme();
+            String host = uri.getHost();
+
+            boolean schemeOk = "http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme);
+            boolean hostOk = host != null && host.contains(".");
+
+            if (!schemeOk || !hostOk) {
+                throw new IllegalArgumentException("Invalid URL: must be http/https with a valid host");
+            }
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Invalid URL format", e);
+        }
+    }
+
+
 }
