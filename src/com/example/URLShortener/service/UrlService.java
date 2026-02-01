@@ -6,7 +6,12 @@ import com.example.URLShortener.repository.UrlRepository;
 import com.example.URLShortener.util.Base62Encoder;
 import com.example.URLShortener.util.RedisUtil;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import redis.clients.jedis.Jedis;
+import redis.clients.jedis.ScanParams;
+import redis.clients.jedis.ScanResult;
 
 public class UrlService {
 
@@ -43,7 +48,7 @@ public class UrlService {
             if (cachedUrl != null) {
                 // Cache HIT
                 System.out.println("[Redis][CacheHit] shortCode=" + shortCode + " -> " + cachedUrl);
-                repository.incrementClickCount(shortCode);
+                incrementClickCounter(shortCode);
                 return cachedUrl;
             }
 
@@ -64,9 +69,55 @@ public class UrlService {
             System.out.println("[Redis][CacheWrite] shortCode=" + shortCode + " -> " + longUrl);
         }
 
-        // 4️⃣ Track click
-        repository.incrementClickCount(shortCode);
+        // 4️⃣ Track click in Redis counter
+        incrementClickCounter(shortCode);
         return longUrl;
+    }
+
+    private static final String CLICK_PREFIX = "click:";
+
+    private void incrementClickCounter(String shortCode) {
+        try (Jedis jedis = RedisUtil.getClient()) {
+            String key = CLICK_PREFIX + shortCode;
+            jedis.incr(key);
+            jedis.expire(key, 3600); // keep hot counters around for an hour
+        }
+    }
+
+    public void flushClickCountsToDb() {
+        Map<String, Integer> deltas = new HashMap<>();
+
+        try (Jedis jedis = RedisUtil.getClient()) {
+            ScanParams params = new ScanParams().match(CLICK_PREFIX + "*").count(100);
+            String cursor = ScanParams.SCAN_POINTER_START;
+
+            do {
+                ScanResult<String> scan = jedis.scan(cursor, params);
+                cursor = scan.getCursor();
+
+                for (String key : scan.getResult()) {
+                    String countStr = jedis.get(key);
+                    if (countStr == null) {
+                        continue;
+                    }
+
+                    int delta = Integer.parseInt(countStr);
+                    String shortCode = key.substring(CLICK_PREFIX.length());
+
+                    deltas.merge(shortCode, delta, Integer::sum);
+
+                    jedis.del(key);
+                }
+            } while (!"0".equals(cursor));
+
+            if (!deltas.isEmpty()) {
+                repository.batchIncrementClickCounts(deltas);
+                System.out.println("[Sync][Clicks] Flushed " + deltas.size() + " short codes to DB");
+            }
+
+        } catch (Exception e) {
+            System.err.println("[Sync][Clicks] Failed to flush click counters: " + e.getMessage());
+        }
     }
 
     private void ensureValidUrl(String url) {

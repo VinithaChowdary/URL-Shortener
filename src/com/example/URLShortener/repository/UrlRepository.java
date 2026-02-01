@@ -4,6 +4,7 @@ import com.example.URLShortener.util.DatabaseUtil;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.util.Map;
 
 public class UrlRepository {
 
@@ -85,6 +86,28 @@ public class UrlRepository {
 
             ps.setString(1, shortCode);
             ps.executeUpdate();
+        }
+    }
+
+    public void batchIncrementClickCounts(Map<String, Integer> deltas) throws Exception {
+
+        if (deltas == null || deltas.isEmpty()) {
+            return;
+        }
+
+        String sql =
+            "UPDATE url_mapping SET click_count = click_count + ? WHERE short_code = ?";
+
+        try (Connection conn = DatabaseUtil.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+
+            for (Map.Entry<String, Integer> entry : deltas.entrySet()) {
+                ps.setInt(1, entry.getValue());
+                ps.setString(2, entry.getKey());
+                ps.addBatch();
+            }
+
+            ps.executeBatch();
         }
     }
 }

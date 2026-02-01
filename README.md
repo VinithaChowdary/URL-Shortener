@@ -180,6 +180,7 @@ GET 9
 
 * **Controller**: Handles HTTP requests
 * **Service**: Business logic + cache-aside strategy
+* **Background Sync Job**: Every 30s, reads Redis click counters and batches updates to PostgreSQL
 * **Repository**: Database access
 * **PostgreSQL**: Source of truth
 * **Redis**: In-memory cache for fast redirects
@@ -199,9 +200,39 @@ This project uses **Cache-Aside Pattern**:
 
 ## 📌 Notes
 
-* Redis is used only as a cache
+* Redis is used as cache **and** for fast click counters (`click:{shortCode}`)
+* A background job flushes Redis click counters to PostgreSQL every 30s
 * PostgreSQL remains the authoritative data store
-* System remains functional even if Redis is down
+* System remains functional even if Redis is down (redirects fall back to DB; clicks may be delayed)
+
+### Click Counter Sync Flow
+
+```
+User Click
+   ↓
+Backend Server
+   ↓
+Redis INCR click:{shortCode}   ← fast
+   ↓
+Redirect immediately
+
+Background Job (every 30s)
+   ↓
+Read Redis counters
+   ↓
+Batch update PostgreSQL
+```
+
+
+### Database Indexing
+
+Redirect lookups are the hottest query path in the system.  
+An index is added on `short_code` to optimize frequent redirect queries and avoid full table scans.
+
+```sql
+CREATE INDEX idx_url_mapping_short_code
+ON url_mapping(short_code);
+
 
 
 
