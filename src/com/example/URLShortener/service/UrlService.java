@@ -8,10 +8,9 @@ import com.example.URLShortener.util.RedisUtil;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 import redis.clients.jedis.Jedis;
-import redis.clients.jedis.ScanParams;
-import redis.clients.jedis.ScanResult;
 
 public class UrlService {
 
@@ -88,27 +87,21 @@ public class UrlService {
         Map<String, Integer> deltas = new HashMap<>();
 
         try (Jedis jedis = RedisUtil.getClient()) {
-            ScanParams params = new ScanParams().match(CLICK_PREFIX + "*").count(100);
-            String cursor = ScanParams.SCAN_POINTER_START;
+            Set<String> keys = jedis.keys(CLICK_PREFIX + "*");
 
-            do {
-                ScanResult<String> scan = jedis.scan(cursor, params);
-                cursor = scan.getCursor();
-
-                for (String key : scan.getResult()) {
-                    String countStr = jedis.get(key);
-                    if (countStr == null) {
-                        continue;
-                    }
-
-                    int delta = Integer.parseInt(countStr);
-                    String shortCode = key.substring(CLICK_PREFIX.length());
-
-                    deltas.merge(shortCode, delta, Integer::sum);
-
-                    jedis.del(key);
+            for (String key : keys) {
+                String countStr = jedis.get(key);
+                if (countStr == null) {
+                    continue;
                 }
-            } while (!"0".equals(cursor));
+
+                int delta = Integer.parseInt(countStr);
+                String shortCode = key.substring(CLICK_PREFIX.length());
+
+                deltas.merge(shortCode, delta, Integer::sum);
+
+                jedis.del(key);
+            }
 
             if (!deltas.isEmpty()) {
                 repository.batchIncrementClickCounts(deltas);
